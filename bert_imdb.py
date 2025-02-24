@@ -21,10 +21,11 @@ from tqdm import tqdm
 # Hypterparameters
 MAX_LEN = 512
 BATCH_SIZE = 32
-EPOCHS = 1
-OLD_MODEL_PATH = "/root/ws/models/bert-base-uncased/"
-NEW_MODEL_PATH = "/root/ws/models/new/"
-DATA_SET = "/root/ws/aclImdb/"
+EPOCHS = 5
+ROOT_DIR = "/Users/minghuayao/AutoDL/"
+OLD_MODEL_PATH = ROOT_DIR + "models/bert-base-uncased/"
+NEW_MODEL_PATH = ROOT_DIR + "/models/new/"
+DATA_SET = ROOT_DIR+ "aclImdb/"
 NUM_LABELS = 3
 LEARNING_RATE = 2e-5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
