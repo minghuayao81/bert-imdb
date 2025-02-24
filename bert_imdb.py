@@ -1,12 +1,12 @@
 import torch
-
+from transformers import BertTokenizer, BertConfig
+from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
+from torch.optim import AdamW
 from transformers import (
     AutoTokenizer,
-    AutoModelForSequenceClassification,
-    AdamW,
     get_linear_schedule_with_warmup,
-    AutoConfig
+    BertForSequenceClassification
 )
 from datasets import load_dataset, DatasetDict, Dataset
 import numpy as np
@@ -21,7 +21,7 @@ from tqdm import tqdm
 # Hypterparameters
 MAX_LEN = 512
 BATCH_SIZE = 32
-EPOCHS = 5
+EPOCHS = 3
 OLD_MODEL_PATH = "/root/ws/models/bert-base-uncased/"
 NEW_MODEL_PATH = "/root/ws/models/new/"
 DATA_SET = "/root/ws/aclImdb/"
@@ -107,11 +107,11 @@ def load_and_preprocess_data():
     })
 
 def create_model():
-    config = AutoConfig.from_pretrained(
+    config = BertConfig.from_pretrained(
         OLD_MODEL_PATH,
         num_labels=NUM_LABELS
     )
-    return AutoModelForSequenceClassification.from_pretrained(OLD_MODEL_PATH, config=config)
+    return BertForSequenceClassification.from_pretrained(OLD_MODEL_PATH, config=config)
 
 def predict(new_model_path, text):
     try:
@@ -128,13 +128,13 @@ def predict(new_model_path, text):
         try:
             tokenizer = AutoTokenizer.from_pretrained(model_path)
         except (OSError, ValueError):
-            config = AutoConfig.from_pretrained(model_path)
+            config = BertConfig.from_pretrained(model_path)
             base_model = getattr(config, "_name_or_path", "bert-base-uncased")
             tokenizer = AutoTokenizer.from_pretrained(base_model)
 
         # model
         try:
-            model = AutoModelForSequenceClassification.from_pretrained(
+            model = BertForSequenceClassification.from_pretrained(
                 model_path, 
                 num_labels=3,
                 id2label={0: "0", 1: "1", 2: "2"},
@@ -142,7 +142,7 @@ def predict(new_model_path, text):
                 local_files_only=True
             ).to(DEVICE)
         except OSError:
-            model = AutoModelForSequenceClassification.from_pretrained(
+            model = BertForSequenceClassification.from_pretrained(
                 model_path,
                 state_dict=torch.load(model_path/"pytorch_model.bin"),
                 config=model_path/"config.json"
@@ -182,7 +182,15 @@ def predict(new_model_path, text):
         
 def train_model(model, train_loader, val_loader):
     model.to(DEVICE)
+    
     optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
+    
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=100,
+        num_training_steps=1000
+    )
+    
     best_val_acc = 0.0
     
     for epoch in range(EPOCHS):
@@ -217,6 +225,8 @@ def train_model(model, train_loader, val_loader):
             # backward and optim
             loss.backward()
             optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
 
             total_train_loss += loss.item()
             progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
@@ -276,7 +286,6 @@ def collate_fn(batch):
         "labels": torch.tensor([x["labels"] for x in batch])
     }
 
-
 if __name__ == "__main__":    
     dataset = load_and_preprocess_data()
     tokenizer = AutoTokenizer.from_pretrained(OLD_MODEL_PATH)
@@ -330,3 +339,13 @@ if __name__ == "__main__":
     #     print(f"Model saved to ASCII-compatible dir: {save_dir}")
 
     # full_save_model(model, tokenizer, NEW_MODEL_PATH)
+
+    
+# 使用样例
+print(predict(NEW_MODEL_PATH, "This movie is absolutely wonderful!"))
+
+# 使用样例
+print(predict(NEW_MODEL_PATH, "What a crap! Sucks!"))
+
+# 使用样例
+print(predict(NEW_MODEL_PATH, "Hmmm... I don't know, hard to say..."))
