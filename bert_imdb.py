@@ -21,7 +21,7 @@ from tqdm import tqdm
 # Hypterparameters
 MAX_LEN = 512
 BATCH_SIZE = 32
-EPOCHS = 3
+EPOCHS = 1
 OLD_MODEL_PATH = "/root/ws/models/bert-base-uncased/"
 NEW_MODEL_PATH = "/root/ws/models/new/"
 DATA_SET = "/root/ws/aclImdb/"
@@ -33,7 +33,8 @@ print(DEVICE)
 def load_aclimdb_directory(data_dir):
     data = []
     # traverse pos and neg folders
-    for label_type in ["pos", "neg", "unsup"]:
+    # for label_type in ["pos", "neg", "unsup"]:
+    for label_type in ["pos", "neg"]:
         dir_path = os.path.join(data_dir, label_type)
         if label_type == "pos":
             label = 0
@@ -117,36 +118,24 @@ def predict(new_model_path, text):
     try:
         # input validation
         if not isinstance(text, str) or not text.strip():
-            raise ValueError("输入文本不能为空")
+            raise ValueError("text should not be empty")
             
         model_path = Path(new_model_path)
         if not model_path.exists():
-            raise FileNotFoundError(f"模型目录不存在：{model_path}")
+            raise FileNotFoundError(f"model does not exist：{model_path}")
             
         # Load model 
         # tokenizer
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
-        except (OSError, ValueError):
-            config = BertConfig.from_pretrained(model_path)
-            base_model = getattr(config, "_name_or_path", "bert-base-uncased")
-            tokenizer = AutoTokenizer.from_pretrained(base_model)
+        tokenizer = BertTokenizer.from_pretrained(model_path)
 
         # model
-        try:
-            model = BertForSequenceClassification.from_pretrained(
-                model_path, 
-                num_labels=3,
-                id2label={0: "0", 1: "1", 2: "2"},
-                label2id={"0":0, "1":1, "2":2},
-                local_files_only=True
-            ).to(DEVICE)
-        except OSError:
-            model = BertForSequenceClassification.from_pretrained(
-                model_path,
-                state_dict=torch.load(model_path/"pytorch_model.bin"),
-                config=model_path/"config.json"
-            ).to(DEVICE)
+        model = BertForSequenceClassification.from_pretrained(
+            model_path, 
+            num_labels=3,
+            id2label={0: "POSITIVE", 1: "NEGATIVE", 2: "UNKNOWN"},
+            label2id={"POSITIVE":0, "NEGATIVE":1, "UNKNOWN":2},
+            local_files_only=True
+        ).to(DEVICE)
 
         # preprocessing
         inputs = tokenizer(
@@ -161,16 +150,13 @@ def predict(new_model_path, text):
         model.eval()
         with torch.inference_mode():
             outputs = model(**inputs)
+        print(outputs.logits)
 
         # label casting
         label_map = getattr(model.config, "id2label", {})
-        if not label_map:
-            label_map = getattr(model.config, "label2id", {}).inverse()
-        if not label_map:
-            num_labels = getattr(model.config, "num_labels", 2)
-            label_map = {i: f"Label_{i}" for i in range(num_labels)}
+        print(label_map)
         
-        return label_map.get(outputs.logits.argmax().item(), "Unknown")
+        return label_map.get(outputs.logits.argmax().item(), "UNKNOWN")
         
     except Exception as e:
         error_msg = f"""
@@ -288,7 +274,7 @@ def collate_fn(batch):
 
 if __name__ == "__main__":    
     dataset = load_and_preprocess_data()
-    tokenizer = AutoTokenizer.from_pretrained(OLD_MODEL_PATH)
+    tokenizer = BertTokenizer.from_pretrained(OLD_MODEL_PATH)
     
     model = create_model()
 
@@ -307,38 +293,11 @@ if __name__ == "__main__":
 
     train_model(model, train_loader, val_loader)
 
-    # def deep_convert_dtypes(obj):
-    #     """彻底转换所有层级的dtype为字符串"""
-    #     if isinstance(obj, np.dtype):
-    #         return str(obj)  # 转换为标准字符串表示如 'int64'
-    #     elif isinstance(obj, np.generic):
-    #         return obj.item()  # numpy标量转Python类型
-    #     elif isinstance(obj, dict):
-    #         return {k: deep_convert_dtypes(v) for k, v in obj.items()}
-    #     elif isinstance(obj, (list, tuple)):
-    #         return type(obj)(deep_convert_dtypes(v) for v in obj)
-    #     return obj
+    def full_save_model(model, tokenizer, save_dir):
+        model.save_pretrained(save_dir)
+        tokenizer.save_pretrained(save_dir)
 
-    # # 处理模型配置的每个参数
-    # original_config = model.config.to_dict()
-    # sanitized_config = deep_convert_dtypes(original_config)
-
-    # # 添加二次验证（确保没有遗留dtype）
-    # assert not any(isinstance(v, np.dtype) for v in sanitized_config.values()), "发现未转换的dtype"
-    
-    # def full_save_model(model, tokenizer, save_dir, metadata=None):
-
-    #     model.save_pretrained(save_dir)  # 自动生成pytorch_model.bin和config.json
-    #     tokenizer.save_pretrained(save_dir)
-        
-    #     # 添加自定义元数据
-    #     if metadata:
-    #         with open(save_dir+"/metadata.json", "w", encoding='utf-8') as f:
-    #             json.dump(metadata, f, indent=2)
-            
-    #     print(f"Model saved to ASCII-compatible dir: {save_dir}")
-
-    # full_save_model(model, tokenizer, NEW_MODEL_PATH)
+    full_save_model(model, tokenizer, NEW_MODEL_PATH)
 
     
 # 使用样例
@@ -348,4 +307,4 @@ print(predict(NEW_MODEL_PATH, "This movie is absolutely wonderful!"))
 print(predict(NEW_MODEL_PATH, "What a crap! Sucks!"))
 
 # 使用样例
-print(predict(NEW_MODEL_PATH, "Hmmm... I don't know, hard to say..."))
+print(predict(NEW_MODEL_PATH, "love it"))
